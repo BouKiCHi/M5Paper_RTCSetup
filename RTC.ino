@@ -1,9 +1,11 @@
 #include <M5EPD.h>
 #include <WiFi.h>
 
+#include "rtc.h"
 #include "WifiConst.h"
 
 M5EPD_Canvas canvas(&M5.EPD);
+Rtc rtc;
 
 void setup() {
     M5.begin();
@@ -13,45 +15,18 @@ void setup() {
     canvas.createCanvas(540, 960);
     canvas.setTextSize(4);
 
-    showTime();
-
-    canvas.pushCanvas(0,0,UPDATE_MODE_GC16);
+    showInfo();
 }
 
 bool wifiStart = false;
 void startWifi() {
     if (wifiStart) return;
-
     wifiStart = true;
+
     WiFi.begin(WifiSSID, WifiPass);
 
-    while (WiFi.status() != WL_CONNECTED) {
-        delay(500);
-        Serial.print(".");
-    }
+    while (WiFi.status() != WL_CONNECTED) { delay(500); }
 }
-
-void setupRtc() {
-    startWifi();
-    configTime(9*3600L,0,"ntp.nict.jp","time.google.com","ntp.jst.mfeed.ad.jp");
-
-    time_t t = time(NULL);
-    struct tm *tm = localtime(&t);
-
-    rtc_date_t rdt;
-    rtc_time_t rtm;
-
-    rdt.year = tm->tm_year + 1900;
-    rdt.mon = tm->tm_mon + 1;
-    rdt.day = tm->tm_mday;
-    M5.RTC.setDate(&rdt);
-
-    rtm.hour = tm->tm_hour;
-    rtm.min = tm->tm_min;
-    rtm.sec = tm->tm_sec;
-    M5.RTC.setTime(&rtm);
-}
-
 
 void showTime() {
     rtc_date_t dt;
@@ -59,49 +34,50 @@ void showTime() {
     M5.RTC.getDate(&dt);
     M5.RTC.getTime(&tm);
 
-    char dateText[256];
-    snprintf(dateText,256,"%04d-%02d-%02d", dt.year, dt.mon, dt.day);
-
-    char timeText[256];
-    snprintf(timeText,256,"%02d:%02d:%02d", tm.hour, tm.min, tm.sec);
-
     canvas.setTextDatum(TL_DATUM);
 
-    canvas.fillRect(0,0, 540, 64, 0);
+    char text[256];
+    snprintf(text,256,"DATE: %04d-%02d-%02d", dt.year, dt.mon, dt.day);
+    canvas.drawString(text, 0, 32);
 
-    canvas.drawString(String("DATE:") + dateText, 0, 0);
-    canvas.drawString(String("TIME:") + timeText, 0, 32);
+    snprintf(text,256,"TIME: %02d:%02d:%02d", tm.hour, tm.min, tm.sec);
+    canvas.drawString(text, 0, 64);
 }
 
 void updateFooter(const char *msg) {
     canvas.fillRect(0,900, 540, 60, 0);
     canvas.drawString(msg, 0, 900);
+    canvas.pushCanvas(0,0,UPDATE_MODE_DU4);
+}
 
+void showInfo() {
+    canvas.fillRect(0,0, 540, 32*3, 0);
+    canvas.drawString("RTC SETUP 20210111", 0, 0);
+
+    showTime();
+    canvas.pushCanvas(0,0,UPDATE_MODE_GC16);
+    // Fill 60px at the bottom of the screen
+    canvas.fillRect(0, 900, 540, 60, 0);
+    canvas.pushCanvas(0,0,UPDATE_MODE_DU);
 }
 
 void loop() {
     if (M5.BtnL.wasPressed()) {
-        updateFooter("CORRECT TIME FROM NTP...");
-        setupRtc();
-        showTime();
-        canvas.pushCanvas(0,0,UPDATE_MODE_GC16);
-        canvas.fillRect(0, 900, 540, 60, 0);
-        canvas.pushCanvas(0,0,UPDATE_MODE_DU4);
+        updateFooter("SYNC DATETIME FROM NTP...");
+        startWifi();
+        rtc.Setup();
+        showInfo();
     }
 
     if (M5.BtnR.wasPressed()) {
         updateFooter("UPDATE...");
-        showTime();
-        canvas.pushCanvas(0,0,UPDATE_MODE_GC16);
-        canvas.fillRect(0, 900, 540, 60, 0);
-        canvas.pushCanvas(0,0,UPDATE_MODE_DU4);
+        showInfo();
     }
 
     if(M5.BtnP.wasPressed()){
         updateFooter("SHUTDOWN...");
-        canvas.fillRect(0,0, 540, 32, 0);
-        canvas.drawString("SHUTDOWN...",0, 900);
-        canvas.pushCanvas(0,0,UPDATE_MODE_DU4);
+        canvas.pushCanvas(0, 0, UPDATE_MODE_DU4);
+        // shutdown after 2second to wait update display
         delay(2000);
         M5.shutdown();
     }
